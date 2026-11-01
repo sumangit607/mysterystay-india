@@ -1,0 +1,185 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String
+  name          String
+  phone         String?
+  role          String    @default("CUSTOMER") // "CUSTOMER", "PARTNER", "ADMIN"
+  avatarUrl     String?
+  isVerified    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  hotels        Hotel[]   @relation("PartnerHotels")
+  bookings      Booking[]
+  reviews       Review[]
+  wishlists     Wishlist[]
+}
+
+model Hotel {
+  id              String        @id @default(uuid())
+  ownerId         String
+  owner           User          @relation("PartnerHotels", fields: [ownerId], references: [id])
+  name            String        // Secret until booked! e.g. "The Leela Palace Goa"
+  legalEntityName String
+  description     String
+  city            String        // e.g. "Goa", "Bengaluru", "Mumbai", "Udaipur", "Manali"
+  microMarket     String        // e.g. "Candolim Beach Strip", "UB City / Lavelle Road"
+  fullAddress     String        // Revealed only upon booking confirmation
+  pincode         String
+  latitude        Float
+  longitude       Float
+  starRating      Int           // 3, 4, or 5
+  publicImages    String        // JSON array of sanitized/unbranded photos
+  brandImages     String        // JSON array of verified property photos revealed post-booking
+  amenities       String        // JSON array: ["Pool", "Free Wi-Fi", "Breakfast", "Gym", "Spa", "Beach Access"]
+  checkInTime     String        @default("14:00")
+  checkOutTime    String        @default("11:00")
+  isVerified      Boolean       @default(false)
+  isActive        Boolean       @default(true)
+  cancellationPolicy String     @default("Free cancellation up to 48 hours before check-in. Non-refundable thereafter.")
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  rooms           Room[]
+  mysteryDeals    MysteryDeal[]
+  reviews         Review[]
+}
+
+model Room {
+  id               String        @id @default(uuid())
+  hotelId          String
+  hotel            Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  roomType         String        // e.g. "Deluxe Ocean View Suite"
+  maxGuests        Int           @default(2)
+  basePriceINR     Float
+  totalUnits       Int           @default(10)
+  bedConfiguration String        @default("1 King Bed")
+  roomSizeSqFt     Int           @default(420)
+  inclusions       String        @default("[\"Complimentary Breakfast\",\"High-Speed Wi-Fi\",\"Pool Access\"]") // JSON array
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  inventory        Inventory[]
+  mysteryDeals     MysteryDeal[]
+  bookingItems     BookingItem[]
+}
+
+model Inventory {
+  id             String    @id @default(uuid())
+  roomId         String
+  room           Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  date           DateTime  // Target stay date
+  allocatedUnits Int       @default(5)
+  bookedUnits    Int       @default(0)
+  lockedUnits    Int       @default(0)
+  priceINR       Float
+
+  @@unique([roomId, date])
+}
+
+model MysteryDeal {
+  id                 String        @id @default(uuid())
+  hotelId            String
+  hotel              Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  roomId             String
+  room               Room          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  headline           String        // e.g. "5-Star Tropical Cliffside Haven with Infinity Pool"
+  teaserDescription  String
+  guaranteedRating   Float         @default(4.7)
+  originalPriceINR   Float         // e.g. 15,500
+  mysteryPriceINR    Float         // e.g. 6,999
+  discountPercentage Int           // e.g. 55
+  validFrom          DateTime
+  validTo            DateTime
+  status             String        @default("ACTIVE") // "ACTIVE", "PAUSED", "SOLD_OUT"
+  priorityScore      Int           @default(100)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  bookings           Booking[]
+}
+
+model Booking {
+  id               String        @id @default(uuid())
+  bookingReference String        @unique // e.g. "SSTAY-2026-9842"
+  userId           String
+  user             User          @relation(fields: [userId], references: [id])
+  dealId           String
+  deal             MysteryDeal   @relation(fields: [dealId], references: [id])
+  hotelId          String
+  checkInDate      DateTime
+  checkOutDate     DateTime
+  guestCount       Int           @default(2)
+  roomCount        Int           @default(1)
+  guestName        String
+  guestEmail       String
+  guestPhone       String
+  originalTotalINR Float
+  finalPriceINR    Float
+  platformFeeINR   Float         @default(299.0)
+  taxGSTINR        Float
+  totalAmountINR   Float
+  status           String        @default("CONFIRMED") // "PENDING_PAYMENT", "CONFIRMED", "CANCELLED", "REFUNDED"
+  paymentId        String?
+  razorpayOrderId  String?
+  paymentMethod    String        @default("Razorpay UPI / NetBanking")
+  specialRequests  String?
+  revealedAt       DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  items            BookingItem[]
+  review           Review?
+}
+
+model BookingItem {
+  id        String   @id @default(uuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+  nightDate DateTime
+  priceINR  Float
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  hotelId   String
+  hotel     Hotel    @relation(fields: [hotelId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  rating    Float    // 1 to 5
+  comment   String
+  createdAt DateTime @default(now())
+}
+
+model Wishlist {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dealId    String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, dealId])
+}
+
+model Coupon {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  discountAmount Float     @default(500.0)
+  minSpend       Float     @default(4000.0)
+  expiresAt      DateTime
+  isActive       Boolean   @default(true)
+}
